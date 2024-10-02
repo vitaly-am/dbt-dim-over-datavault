@@ -1,0 +1,61 @@
+{%- macro dimension(src_pk, src_nk, src_extra_columns, satellites, exclude_columns, src_ldts, source_model, pit) -%}
+
+    {{- dbtvault.check_required_parameters(src_pk=src_pk, src_nk=src_nk,
+                                           src_ldts=src_ldts,
+                                           source_model=source_model) -}}
+
+    {{- dbtvault.prepend_generated_by() }}
+
+    {{ adapter.dispatch('dimension', 'dbtvault')(src_pk=src_pk, src_nk=src_nk,
+                                                 src_extra_columns=src_extra_columns,
+                                                 satellites=satellites,
+                                                 exclude_columns=exclude_columns,
+                                                 src_ldts=src_ldts,
+                                                 source_model=source_model,
+                                                 pit=pit) -}}
+{%- endmacro -%}
+
+{%- macro default__dimension(src_pk, src_nk, src_extra_columns, satellites, exclude_columns, src_ldts, source_model, pit) -%}
+
+{%- set source_cols = dbtvault.expand_column_list(columns=[src_pk, src_nk, src_extra_columns]) %}
+{%- set include_columns = [] %}
+{%- set exclude_columns = exclude_columns | map("lower") | list %}
+{%- for col in source_cols -%}
+    {%- if col | lower not in exclude_columns -%}
+        {% do include_columns.append(col) %}
+    {%- endif %}
+{%- endfor %}
+
+{%- set pit_name = pit['pit_name'] -%}
+{%- set pit_pk = pit['pk']['pk'] -%}
+{%- set pit_ldts_name = pit['ldts'] %}
+{%- set pit_as_of_date_name = pit['as_of_date'] %}
+
+SELECT
+    {{ dbtvault.alias_all(include_columns, pit_name | lower ~ '_src') }}
+    {%- if pit_as_of_date_name %}
+    ,{{ pit_name | lower ~ '_src' }}.as_of_date as {{ pit_as_of_date_name }}
+    {%- endif %}
+{%- for sat_name in satellites -%}
+    {%- if 'extra_columns' in satellites[sat_name] and satellites[sat_name]['extra_columns'] -%},
+    {%- set sat_extra_columns = satellites[sat_name]['extra_columns'] %}
+    {{ dbtvault.alias_all(sat_extra_columns, sat_name | lower ~ '_src') }}
+    {%- endif -%}
+{%- endfor %}
+
+FROM {{ ref(pit_name) }} AS {{ pit_name | lower ~ '_src' }}
+
+{%- for sat_name in satellites -%}
+
+{%- set sat_pk_name = (satellites[sat_name]['pk'].keys() | list )[0] -%}
+{%- set sat_ldts_name = (satellites[sat_name]['ldts'].keys() | list )[0] -%}
+{%- set sat_deleted_name = (satellites[sat_name]['deleted'].keys() | list )[0] -%}
+{%- set sat_pk = satellites[sat_name]['pk'][sat_pk_name] -%}
+{%- set sat_deleted = satellites[sat_name]['deleted'][sat_deleted_name] %}
+
+LEFT JOIN {{ ref(sat_name) }} AS {{ sat_name | lower ~ '_src' }}
+    ON {{ sat_name | lower ~ '_src' }}.{{ src_pk }} = {{ pit_name | lower ~ '_src' }}.{{ pit_pk }}
+    AND {{ sat_name | lower ~ '_src' }}.{{ sat_ldts_name }} = {{ pit_name | lower ~ '_src' }}.{{ sat_name ~ '_' ~ pit_ldts_name }}
+{% endfor %}
+
+{%- endmacro -%}
