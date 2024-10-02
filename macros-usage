@@ -1,0 +1,35 @@
+{{ config(
+  schema = "mart",
+  materialized = "view",
+) }}
+
+{%- set yaml_metadata -%}
+source_model: hub_ent_equip
+src_pk: hk_ent_equip
+src_nk:
+  - source_column: equip_id
+    alias: equip_id
+src_extra_columns:
+  - source_column: id_pit_ent_equip
+    alias: id_ent_equip
+pit:
+  pit_name: pit_ent_equip
+  pk:
+    pk: hk_ent_equip
+  ldts: load_datetime
+  as_of_date: effective_datetime
+exclude_columns:
+  - hk_ent_equip
+src_ldts: load_datetime
+{%- endset -%}
+
+{% set metadata_dict = fromyaml(yaml_metadata) %}
+
+{{ dbtvault.dimension(source_model=metadata_dict['source_model'],
+                      src_pk=metadata_dict['src_pk'],
+                      src_nk=metadata_dict['src_nk'],
+                      src_extra_columns=metadata_dict['src_extra_columns'],
+                      satellites=metadata_dict['satellites'],
+                      exclude_columns=metadata_dict['exclude_columns'],
+                      src_ldts=metadata_dict['src_ldts'],
+                      pit=metadata_dict['pit']) }}
